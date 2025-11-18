@@ -69,9 +69,16 @@ MISO              →  GP16
 - ビット深度: 8bit, 16bit
 - チャンネル: モノラル、ステレオ
 
+### MP3ファイル仕様
+- フォーマット: MPEG-1/2/2.5 Layer 3
+- サンプリングレート: 8kHz〜44.1kHz
+- ビットレート: 最大320kbps（推奨: 128-192kbps）
+- チャンネル: モノラル、ステレオ
+- **注意**: RP2040では200MHzオーバークロックが必要（自動設定済み）
+
 ### ファイル命名規則
 - ファイル名は英数字推奨
-- 拡張子: `.wav` または `.WAV`
+- 拡張子: `.wav` / `.WAV` / `.mp3` / `.MP3`
 - ファイルはアルファベット順に再生されます
 
 ## 電源要件
@@ -116,7 +123,7 @@ MISO              →  GP16
 推奨設定:
 - Board: "Raspberry Pi Pico W"
 - Flash Size: "2MB (Sketch: 1.5MB, FS: 512KB)"
-- CPU Speed: "133 MHz"
+- CPU Speed: "133 MHz" （コード内で200MHzに自動オーバークロック）
 - Optimize: "Small (-Os) (standard)"
 - RTTI: "Disabled"
 - Stack Protector: "Disabled"
@@ -124,6 +131,8 @@ MISO              →  GP16
 - Debug Port: "Disabled"
 - Debug Level: "None"
 - USB Stack: "Pico SDK"
+
+**注意**: MP3再生にはCPUを200MHzにオーバークロックする必要があります。コード内で`set_sys_clock_khz(200000, true);`により自動設定されます。
 
 ## トラブルシューティング
 

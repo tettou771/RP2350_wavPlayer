@@ -223,8 +223,9 @@ bool WavPlayer::play(const char* filename) {
   _serialManager.send("info", info);
 
   // I2S設定
-  _i2s.setBCLK(_i2sBclkPin);
-  _i2s.setDOUT(_i2sDinPin);
+  _i2s.setBCLK(_i2sBclkPin);       // GP11
+  _i2s.setDOUT(_i2sDinPin);        // GP10 (OUTPUT用はsetDOUT)
+  // LRCピンは自動的にBCLK+1に設定される（GP12）
   _i2s.setBitsPerSample(header.bitsPerSample);
 
   if (!_i2s.begin(header.sampleRate)) {

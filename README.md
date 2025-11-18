@@ -2,15 +2,18 @@
 
 > **注意**: このプロジェクト名は RP2350_wavPlayer ですが、**Raspberry Pi Pico W (RP2040) でテスト・動作確認済み**です。RP2350 (Pico 2) と RP2040 (Pico W) の両方で使用できます。
 
-RP2350/RP2040マイコンを使用したSDカードWAVファイル再生プレイヤー。I2S出力でMAX98357Aアンプを駆動します。
+RP2350/RP2040マイコンを使用したSDカードオーディオファイル再生プレイヤー。I2S出力でMAX98357Aアンプを駆動します。
 
 ## 特徴
 
-- ✅ SDカードからWAVファイル自動再生
+- ✅ SDカードからWAV/MP3ファイル自動再生
 - ✅ I2S出力（MAX98357A対応）
 - ✅ シリアルコマンドで制御可能
-- ✅ 複数フォーマット対応（8/16bit, mono/stereo）
+- ✅ 複数フォーマット対応
+  - WAV: 8/16bit, mono/stereo
+  - MP3: 8kHz〜44.1kHz, mono/stereo, 最大320kbps
 - ✅ ファイル名順の自動再生
+- ✅ ファイル形式自動判別
 
 ## 必要なもの
 
@@ -27,6 +30,7 @@ RP2350/RP2040マイコンを使用したSDカードWAVファイル再生プレ�
 - Arduino IDE 2.x
 - arduino-pico ボードライブラリ
 - ofxSerialManager ライブラリ（`../../libraries/ofxSerialManager`）
+- BackgroundAudio ライブラリ（`../../libraries/BackgroundAudio`）- MP3再生用
 
 ## 配線
 
@@ -69,22 +73,39 @@ GND              →  GND
    - **Pico 2 (RP2350)の場合:**
      - Board: "Raspberry Pi Pico 2"
      - USB Stack: "Pico SDK"
+     - CPU Speed: "150 MHz" (デフォルト、MP3対応可能)
    - **Pico W (RP2040)の場合:**
      - Board: "Raspberry Pi Pico W"
      - USB Stack: "Pico SDK"
+     - **注意**: MP3再生にはコード内で200MHzにオーバークロック（自動設定済み）
 
 ### 2. ライブラリのインストール
+
+必要なライブラリを配置してください：
+
+```bash
+cd ../../libraries
+# BackgroundAudio (MP3再生用)
+git clone https://github.com/earlephilhower/BackgroundAudio.git
+```
 
 ofxSerialManagerライブラリが`../../libraries/ofxSerialManager`に配置されていることを確認してください。
 
 ### 3. SDカードの準備
 
 1. microSDカードをFAT32でフォーマット
-2. WAVファイルをルートディレクトリにコピー
-   - 対応フォーマット: PCM（非圧縮）
-   - サンプリングレート: 8kHz〜48kHz（推奨: 44.1kHz）
-   - ビット深度: 8bit, 16bit
-   - チャンネル: モノラル、ステレオ
+2. オーディオファイルをルートディレクトリにコピー
+
+**WAVファイル:**
+- 対応フォーマット: PCM（非圧縮）
+- サンプリングレート: 8kHz〜48kHz（推奨: 44.1kHz）
+- ビット深度: 8bit, 16bit
+- チャンネル: モノラル、ステレオ
+
+**MP3ファイル:**
+- サンプリングレート: 8kHz〜44.1kHz
+- ビットレート: 最大320kbps（推奨: 128-192kbps）
+- チャンネル: モノラル、ステレオ
 
 ### 4. 書き込み
 
@@ -97,9 +118,9 @@ ofxSerialManagerライブラリが`../../libraries/ofxSerialManager`に配置さ
 
 ### 基本動作
 
-1. 電源投入後、自動的にSDカード内のWAVファイルをスキャン
+1. 電源投入後、自動的にSDカード内のオーディオファイル（WAV/MP3）をスキャン
 2. ファイル一覧がシリアルモニタに表示される
-3. 名前順に全ファイルを自動再生
+3. 名前順に全ファイルを自動再生（形式自動判別）
 4. 再生完了後、コマンド待機状態に
 
 ### シリアルコマンド
@@ -126,13 +147,22 @@ help:              # ヘルプを表示
 ## 対応フォーマット
 
 ### 対応
+**WAV:**
 - ✅ WAV (PCM, 非圧縮)
 - ✅ 8bit / 16bit
 - ✅ モノラル / ステレオ
 - ✅ 8kHz〜48kHz
 
+**MP3:**
+- ✅ MP3 (MPEG-1/2/2.5 Layer 3)
+- ✅ 8kHz〜44.1kHz
+- ✅ モノラル / ステレオ
+- ✅ 最大320kbps (推奨: 128-192kbps)
+- ⚠️ RP2040: 200MHzオーバークロック必須（自動設定済み）
+- ✅ RP2350: 150MHzで高品質再生可能
+
 ### 非対応
-- ❌ MP3, AAC等の圧縮フォーマット
+- ❌ AAC, FLAC, OGG等の他の圧縮フォーマット
 - ❌ 24bit / 32bit PCM
 - ❌ 48kHz超のサンプリングレート
 

@@ -35,6 +35,7 @@
 #include <SPI.h>
 #include "ofxSerialManager.h"
 #include "WavPlayer.h"
+#include "Mp3Player.h"
 
 // I2Sピン定義
 #define I2S_BCLK_PIN  11   // Bit Clock
@@ -53,16 +54,19 @@ ofxSerialManager serialManager;
 // WAVプレイヤー
 WavPlayer* wavPlayer = nullptr;
 
-// WAVファイルリスト
-String wavFiles[100];
-int wavFileCount = 0;
+// MP3プレイヤー
+Mp3Player* mp3Player = nullptr;
+
+// オーディオファイルリスト（WAV + MP3）
+String audioFiles[100];
+int audioFileCount = 0;
 int currentFileIndex = 0;
 
 /**
- * SDカード内のWAVファイルをスキャン
+ * SDカード内のオーディオファイルをスキャン（WAV + MP3）
  */
-void scanWavFiles() {
-  wavFileCount = 0;
+void scanAudioFiles() {
+  audioFileCount = 0;
 
   File root = SD.open("/");
   if (!root) {
@@ -76,10 +80,10 @@ void scanWavFiles() {
     return;
   }
 
-  serialManager.send("info", "Scanning WAV files...");
+  serialManager.send("info", "Scanning audio files...");
 
   File entry = root.openNextFile();
-  while (entry && wavFileCount < 100) {
+  while (entry && audioFileCount < 100) {
     if (!entry.isDirectory()) {
       String filename = String(entry.name());
 
@@ -90,10 +94,11 @@ void scanWavFiles() {
         continue;
       }
 
-      // .wavファイルのみをリストに追加
-      if (filename.endsWith(".wav") || filename.endsWith(".WAV")) {
-        wavFiles[wavFileCount] = filename;
-        wavFileCount++;
+      // .wav または .mp3 ファイルをリストに追加
+      if (filename.endsWith(".wav") || filename.endsWith(".WAV") ||
+          filename.endsWith(".mp3") || filename.endsWith(".MP3")) {
+        audioFiles[audioFileCount] = filename;
+        audioFileCount++;
       }
     }
     entry.close();
@@ -103,35 +108,35 @@ void scanWavFiles() {
   root.close();
 
   // ファイル名でソート（バブルソート）
-  for (int i = 0; i < wavFileCount - 1; i++) {
-    for (int j = 0; j < wavFileCount - i - 1; j++) {
-      if (wavFiles[j] > wavFiles[j + 1]) {
-        String temp = wavFiles[j];
-        wavFiles[j] = wavFiles[j + 1];
-        wavFiles[j + 1] = temp;
+  for (int i = 0; i < audioFileCount - 1; i++) {
+    for (int j = 0; j < audioFileCount - i - 1; j++) {
+      if (audioFiles[j] > audioFiles[j + 1]) {
+        String temp = audioFiles[j];
+        audioFiles[j] = audioFiles[j + 1];
+        audioFiles[j + 1] = temp;
       }
     }
   }
 
   char msg[64];
-  sprintf(msg, "Found %d WAV files", wavFileCount);
+  sprintf(msg, "Found %d audio files (WAV + MP3)", audioFileCount);
   serialManager.send("info", msg);
 }
 
 /**
- * WAVファイル一覧を表示
+ * オーディオファイル一覧を表示
  */
-void printWavFileList() {
-  serialManager.send("info", "=== WAV Files on SD Card ===");
+void printAudioFileList() {
+  serialManager.send("info", "=== Audio Files on SD Card (WAV + MP3) ===");
 
-  for (int i = 0; i < wavFileCount; i++) {
+  for (int i = 0; i < audioFileCount; i++) {
     char msg[128];
-    sprintf(msg, "[%d] %s", i, wavFiles[i].c_str());
+    sprintf(msg, "[%d] %s", i, audioFiles[i].c_str());
     serialManager.send("info", msg);
   }
 
   char summary[64];
-  sprintf(summary, "Total: %d files", wavFileCount);
+  sprintf(summary, "Total: %d files", audioFileCount);
   serialManager.send("info", summary);
 }
 
@@ -139,16 +144,34 @@ void printWavFileList() {
  * 次のファイルを再生
  */
 void playNext() {
-  if (wavFileCount == 0) {
-    serialManager.send("warn", "No WAV files found");
+  if (audioFileCount == 0) {
+    serialManager.send("warn", "No audio files found");
     return;
   }
 
-  if (currentFileIndex >= wavFileCount) {
+  if (currentFileIndex >= audioFileCount) {
     currentFileIndex = 0;  // 最初に戻る
   }
 
-  wavPlayer->play(wavFiles[currentFileIndex].c_str());
+  String filename = audioFiles[currentFileIndex];
+
+  // ファイル形式を判別して適切なプレイヤーで再生
+  if (filename.endsWith(".mp3") || filename.endsWith(".MP3")) {
+    // MP3ファイルの場合
+    // WAVプレイヤーが再生中なら停止
+    if (wavPlayer && wavPlayer->isPlaying()) {
+      wavPlayer->stop();
+    }
+    mp3Player->play(filename.c_str());
+  } else if (filename.endsWith(".wav") || filename.endsWith(".WAV")) {
+    // WAVファイルの場合
+    // MP3プレイヤーが再生中なら停止
+    if (mp3Player && mp3Player->isPlaying()) {
+      mp3Player->stop();
+    }
+    wavPlayer->play(filename.c_str());
+  }
+
   currentFileIndex++;
 }
 
@@ -156,7 +179,7 @@ void playNext() {
  * リストコマンドハンドラ
  */
 void handleList(const char* payload, int length) {
-  printWavFileList();
+  printAudioFileList();
 }
 
 /**
@@ -168,7 +191,23 @@ void handlePlay(const char* payload, int length) {
     char filename[128];
     memcpy(filename, payload, length);
     filename[length] = '\0';
-    wavPlayer->play(filename);
+
+    String filenameStr = String(filename);
+
+    // ファイル形式を判別して適切なプレイヤーで再生
+    if (filenameStr.endsWith(".mp3") || filenameStr.endsWith(".MP3")) {
+      // MP3ファイルの場合
+      if (wavPlayer && wavPlayer->isPlaying()) {
+        wavPlayer->stop();
+      }
+      mp3Player->play(filename);
+    } else if (filenameStr.endsWith(".wav") || filenameStr.endsWith(".WAV")) {
+      // WAVファイルの場合
+      if (mp3Player && mp3Player->isPlaying()) {
+        mp3Player->stop();
+      }
+      wavPlayer->play(filename);
+    }
   } else {
     // 次のファイルを再生
     playNext();
@@ -181,9 +220,27 @@ void handlePlay(const char* payload, int length) {
 void handlePlayAll(const char* payload, int length) {
   currentFileIndex = 0;
 
-  while (currentFileIndex < wavFileCount) {
+  while (currentFileIndex < audioFileCount) {
+    String filename = audioFiles[currentFileIndex];
+    bool isMp3 = filename.endsWith(".mp3") || filename.endsWith(".MP3");
+
     playNext();
-    delay(500);  // ファイル間に少し間隔を開ける
+
+    // MP3の場合は再生完了を待つ（非同期再生のため）
+    if (isMp3) {
+      // 再生が開始されるまで少し待つ
+      delay(100);
+
+      // 再生が終わるまで待つ
+      while (mp3Player && mp3Player->isPlaying()) {
+        mp3Player->update();
+        serialManager.update();
+        yield();
+      }
+    }
+
+    // ファイル間に少し間隔を開ける
+    delay(500);
   }
 
   serialManager.send("info", "All files played");
@@ -195,16 +252,19 @@ void handlePlayAll(const char* payload, int length) {
 void handleStop(const char* payload, int length) {
   if (wavPlayer) {
     wavPlayer->stop();
-    serialManager.send("info", "Playback stopped");
   }
+  if (mp3Player) {
+    mp3Player->stop();
+  }
+  serialManager.send("info", "Playback stopped");
 }
 
 /**
  * 再スキャンコマンドハンドラ
  */
 void handleScan(const char* payload, int length) {
-  scanWavFiles();
-  printWavFileList();
+  scanAudioFiles();
+  printAudioFileList();
 }
 
 /**
@@ -223,6 +283,9 @@ void handleHelp(const char* payload, int length) {
 }
 
 void setup() {
+  // CPU を200MHzにオーバークロック（MP3再生のため）
+  set_sys_clock_khz(200000, true);
+
   // シリアル通信初期化
   Serial.begin(115200);
 
@@ -234,6 +297,11 @@ void setup() {
 
   // ofxSerialManagerセットアップ
   serialManager.setup(&Serial);
+
+  // CPU周波数を表示
+  char cpuInfo[64];
+  sprintf(cpuInfo, "CPU Clock: %lu MHz", rp2040.f_cpu() / 1000000);
+  serialManager.send("info", cpuInfo);
 
   // コマンドハンドラ登録
   serialManager.addListener("list", handleList);
@@ -281,25 +349,24 @@ void setup() {
 
   serialManager.send("info", "WavPlayer initialized");
 
-  // WAVファイルをスキャン
-  scanWavFiles();
-  printWavFileList();
+  // MP3プレイヤー初期化
+  mp3Player = new Mp3Player(serialManager);
+  if (!mp3Player->begin(I2S_BCLK_PIN, I2S_LRC_PIN, I2S_DIN_PIN)) {
+    serialManager.send("error", "Mp3Player initialization failed");
+    return;
+  }
 
-  // 自動再生開始
-  if (wavFileCount > 0) {
-    serialManager.send("info", "Starting automatic playback...");
-    delay(1000);
-    currentFileIndex = 0;
+  serialManager.send("info", "Mp3Player initialized");
 
-    // 全ファイルを順番に再生
-    while (currentFileIndex < wavFileCount) {
-      playNext();
-      delay(500);
-    }
+  // オーディオファイル（WAV + MP3）をスキャン
+  scanAudioFiles();
+  printAudioFileList();
 
-    serialManager.send("info", "Playback complete. Ready for commands.");
+  // 起動完了メッセージ
+  if (audioFileCount > 0) {
+    serialManager.send("info", "Ready for playback. Use 'playall:' to start automatic playback.");
   } else {
-    serialManager.send("warn", "No WAV files found. Ready for commands.");
+    serialManager.send("warn", "No audio files found. Ready for commands.");
   }
 }
 
@@ -307,5 +374,11 @@ void loop() {
   // シリアル通信処理
   serialManager.update();
 
-  delay(10);
+  // MP3デコード処理を継続
+  if (mp3Player) {
+    mp3Player->update();
+  }
+
+  // リアルタイム処理のため、delayではなくyieldを使用
+  yield();
 }
