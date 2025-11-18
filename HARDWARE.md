@@ -1,10 +1,12 @@
 # RP2350_wavPlayer ハードウェア構成
 
+> **注意**: このドキュメントはRP2350向けに記載されていますが、**Raspberry Pi Pico W (RP2040) でテスト・動作確認済み**です。
+
 ## 主要コンポーネント
 
 | コンポーネント | 型番 | 説明 |
 |------------|------|------|
-| MCU | RP2350A | メインコントローラー |
+| MCU | RP2350A または RP2040 | メインコントローラー<br>テスト済み: Pico W (RP2040) |
 | アンプ | MAX98357A | I2S入力対応 Class Dアンプ |
 | ストレージ | microSDカード | WAVファイル保存用 |
 
@@ -22,7 +24,7 @@
 
 **MAX98357Aピン接続:**
 ```
-MAX98357A    →  RP2350
+MAX98357A    →  Pico 2/Pico W
 ---------------------------------
 VIN          →  VBUS (5V)
 GND          →  GND
@@ -43,13 +45,13 @@ GAIN         →  (未接続、デフォルトゲイン = 9dB)
 | GP16 | MISO | マスター入力・スレーブ出力 (SPI0 RX) |
 
 **注意**:
-- SPI0を使用（RP2350の標準SPI0ピン配置）
+- SPI0を使用（RP2350/RP2040の標準SPI0ピン配置）
 - GP16-19は連続したピン番号で配線しやすい
 - I2Sピン（GP10-12）と競合しない
 
 **SDカードモジュール接続:**
 ```
-SD Card Module    →  RP2350
+SD Card Module    →  Pico 2/Pico W
 ---------------------------------
 VCC (3.3V)        →  3V3(OUT)
 GND               →  GND
@@ -76,15 +78,15 @@ MISO              →  GP16
 
 | 項目 | 仕様 |
 |------|------|
-| RP2350動作電圧 | 1.8V〜5.5V (USBから給電時は5V) |
+| MCU動作電圧 | RP2350/RP2040: 1.8V〜5.5V (USBから給電時は5V) |
 | MAX98357A電源 | 2.5V〜5.5V (推奨5V) |
-| 消費電流 | RP2350: 〜100mA, MAX98357A: 最大3W出力時〜500mA |
+| 消費電流 | MCU: 〜100mA, MAX98357A: 最大3W出力時〜500mA |
 | 推奨電源 | USB 5V 1A以上 |
 
 ## 回路図メモ
 
 ### I2S信号レベル
-- RP2350のI2S出力は3.3Vロジック
+- RP2350/RP2040のI2S出力は3.3Vロジック
 - MAX98357Aは2.5V〜5.5Vのロジック入力に対応（3.3V互換）
 
 ### オーディオ出力
@@ -94,7 +96,7 @@ MISO              →  GP16
 
 ## 書き込み方法
 
-ボード設定: **Raspberry Pi Pico 2**
+### Pico 2 (RP2350) の場合
 
 推奨設定:
 - Board: "Raspberry Pi Pico 2"
@@ -108,6 +110,20 @@ MISO              →  GP16
 - Debug Level: "None"
 - USB Stack: "Pico SDK"
 - IP/Bluetooth Stack: "IPv4 Only"
+
+### Pico W (RP2040) の場合
+
+推奨設定:
+- Board: "Raspberry Pi Pico W"
+- Flash Size: "2MB (Sketch: 1.5MB, FS: 512KB)"
+- CPU Speed: "133 MHz"
+- Optimize: "Small (-Os) (standard)"
+- RTTI: "Disabled"
+- Stack Protector: "Disabled"
+- C++ Exceptions: "Disabled"
+- Debug Port: "Disabled"
+- Debug Level: "None"
+- USB Stack: "Pico SDK"
 
 ## トラブルシューティング
 

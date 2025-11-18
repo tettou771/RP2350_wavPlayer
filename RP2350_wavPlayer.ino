@@ -1,9 +1,13 @@
 /**
  * RP2350_wavPlayer
  *
+ * 注意：
+ * このプロジェクトはRP2350とRP2040の両方で動作します。
+ * Raspberry Pi Pico W (RP2040) でテスト・動作確認済み。
+ *
  * 目的：
  * SDカードからWAVファイルを読み込み、I2S経由でMAX98357Aアンプに出力する
- * RP2350Aを使用し、ofxSerialManagerでシリアル通信を行う
+ * ofxSerialManagerでシリアル通信を行う
  *
  * 機能：
  * - Serial接続待機（最大5秒）
@@ -21,6 +25,10 @@
  * - GP18: SCK (Serial Clock) - SPI0
  * - GP19: MOSI (Master Out Slave In) - SPI0
  * - GP16: MISO (Master In Slave Out) - SPI0
+ *
+ * 対応デバイス：
+ * - Raspberry Pi Pico 2 (RP2350)
+ * - Raspberry Pi Pico W (RP2040)
  */
 
 #include <SD.h>

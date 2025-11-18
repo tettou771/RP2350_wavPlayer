@@ -1,6 +1,8 @@
 # RP2350_wavPlayer
 
-RP2350マイコンを使用したSDカードWAVファイル再生プレイヤー。I2S出力でMAX98357Aアンプを駆動します。
+> **注意**: このプロジェクト名は RP2350_wavPlayer ですが、**Raspberry Pi Pico W (RP2040) でテスト・動作確認済み**です。RP2350 (Pico 2) と RP2040 (Pico W) の両方で使用できます。
+
+RP2350/RP2040マイコンを使用したSDカードWAVファイル再生プレイヤー。I2S出力でMAX98357Aアンプを駆動します。
 
 ## 特徴
 
@@ -13,7 +15,8 @@ RP2350マイコンを使用したSDカードWAVファイル再生プレイヤー
 ## 必要なもの
 
 ### ハードウェア
-- Raspberry Pi Pico 2 (RP2350A)
+- Raspberry Pi Pico 2 (RP2350A) **または** Raspberry Pi Pico W (RP2040)
+  - テスト済み: Pico W (RP2040)
 - MAX98357A I2S Class Dアンプモジュール
 - microSDカードモジュール
 - microSDカード (Class 10推奨、FAT32フォーマット)
@@ -30,7 +33,7 @@ RP2350マイコンを使用したSDカードWAVファイル再生プレイヤー
 ### I2S - MAX98357A
 
 ```
-RP2350 (Pico 2)  →  MAX98357A
+Pico 2/Pico W    →  MAX98357A
 ----------------------------------
 GP10             →  DIN
 GP11             →  BCLK
@@ -44,7 +47,7 @@ GND              →  GND
 ### SPI - SDカード
 
 ```
-RP2350 (Pico 2)  →  SDカードモジュール
+Pico 2/Pico W    →  SDカードモジュール
 ----------------------------------
 GP17             →  CS
 GP18             →  SCK
@@ -63,8 +66,12 @@ GND              →  GND
 1. Arduino IDE 2.xをインストール
 2. ボードマネージャーから「Raspberry Pi Pico/RP2040/RP2350」をインストール
 3. ボード設定:
-   - Board: "Raspberry Pi Pico 2"
-   - USB Stack: "Pico SDK"
+   - **Pico 2 (RP2350)の場合:**
+     - Board: "Raspberry Pi Pico 2"
+     - USB Stack: "Pico SDK"
+   - **Pico W (RP2040)の場合:**
+     - Board: "Raspberry Pi Pico W"
+     - USB Stack: "Pico SDK"
 
 ### 2. ライブラリのインストール
 
@@ -81,7 +88,7 @@ ofxSerialManagerライブラリが`../../libraries/ofxSerialManager`に配置さ
 
 ### 4. 書き込み
 
-1. RP2350をUSBで接続
+1. Pico 2 または Pico W をUSBで接続
 2. Arduino IDEで`RP2350_wavPlayer.ino`を開く
 3. ボードとポートを選択
 4. 「アップロード」をクリック

@@ -2,13 +2,19 @@
 
 ## プロジェクト概要
 
-RP2350マイコンを使用してSDカードからWAVファイルを読み込み、I2S経由でMAX98357Aアンプに出力するオーディオプレイヤー。
+RP2350/RP2040マイコンを使用してSDカードからWAVファイルを読み込み、I2S経由でMAX98357Aアンプに出力するオーディオプレイヤー。
+
+> **注意**: このプロジェクトはRP2350向けに設計されましたが、**Raspberry Pi Pico W (RP2040) でテスト・動作確認済み**です。両デバイスで使用可能です。
 
 ### 開発日
 2025-11-12
 
+### テストデバイス
+- **実機テスト**: Raspberry Pi Pico W (RP2040)
+- **対象デバイス**: Raspberry Pi Pico 2 (RP2350), Raspberry Pi Pico W (RP2040)
+
 ### 要件定義
-1. RP2350Aマイコンを使用
+1. RP2350A/RP2040マイコンを使用
 2. I2S出力でMAX98357Aアンプを駆動
 3. SDカード（SPI1予定→SPI0使用）からWAVファイル読み込み
 4. ofxSerialManagerライブラリを使用したシリアル通信
@@ -25,7 +31,8 @@ RP2350マイコンを使用してSDカードからWAVファイルを読み込み
 - **ofxSerialManager**: カスタムシリアル通信ライブラリ（../../libraries/ofxSerialManager）
 
 ### ハードウェア
-- MCU: RP2350A (Raspberry Pi Pico 2)
+- MCU: RP2350A (Raspberry Pi Pico 2) または RP2040 (Raspberry Pi Pico W)
+  - テスト済み: Raspberry Pi Pico W (RP2040)
 - アンプ: MAX98357A (I2S Class D Amplifier)
 - ストレージ: microSDカード
 
@@ -44,17 +51,17 @@ RP2350マイコンを使用してSDカードからWAVファイルを読み込み
 
 ### 2. SPI設定（SPI0の使用）
 
-**配線**: RP2350の標準SPI0ピン配置を使用
+**配線**: RP2350/RP2040の標準SPI0ピン配置を使用
 - GP16: MISO (SPI0 RX)
 - GP17: CS (SPI0 CS)
 - GP18: SCK (SPI0 SCK)
 - GP19: MOSI (SPI0 TX)
 
 **選択理由**:
-- RP2350の標準SPI0ピン配置に準拠
+- RP2350/RP2040の標準SPI0ピン配置に準拠
 - GP16-19は連続したピン番号で配線しやすい
 - I2Sピン（GP10-12）と競合しない
-- Pico 2の物理ピン配置で確実にアクセス可能
+- Pico 2とPico Wの両方で物理ピン配置が利用可能
 
 **変更履歴**:
 - 2025-11-12: 当初はGP20/21/22/23を使用予定だったが、GP23がPico 2で物理ピンとして利用不可の可能性があり、標準SPI0ピン（GP16-19）に変更
@@ -67,9 +74,10 @@ RP2350マイコンを使用してSDカードからWAVファイルを読み込み
 - GP12: LRC (LR Clock)
 
 **理由**:
-- RP2350のPIOブロックと干渉しない位置
+- RP2350/RP2040のPIOブロックと干渉しない位置
 - 物理的に近接配置可能（配線長を短く保てる）
 - SDカードピンと競合しない
+- Pico 2とPico Wの両方で利用可能
 
 ### 4. シリアル通信（ofxSerialManager）
 
@@ -291,11 +299,49 @@ help:
 **決定**: NuiControllerと同じSPI0配線を採用
 **理由**: 実績ある安定した構成
 
+#### 問題3: I2Sクラスの使い方
+**症状**: `I2S.write()`でコンパイルエラー（expected unqualified-id before '.' token）
+**原因**: arduino-picoのI2Sはグローバルオブジェクトではなくクラス定義
+**解決**: WavPlayerクラスに`I2S _i2s;`メンバー変数を追加し、インスタンスメソッドとして使用
+
+#### 問題4: デバイス判明（Pico W vs Pico 2）
+**症状**: UF2ファイル書き込み後、デバイスが起動しない
+**原因**: 実際のデバイスはPico W (RP2040)だったが、Pico 2 (RP2350)用の設定で書き込んでいた
+**解決**: ボード設定を "Raspberry Pi Pico W" に変更
+**影響**: プロジェクトはRP2350向け設計だが、RP2040で実機テスト済み
+
+#### 問題5: SDカード初期化失敗
+**症状**: `SD card initialization failed` エラー
+**原因**: `SPI.begin()`呼び出しが不足、および配線の誤接続
+**解決**:
+- SPI.setRX/TX/SCK/CSでピン設定後、`SPI.begin()`を明示的に呼び出す
+- 配線を確認・修正
+- `SD.begin(CS_PIN)`のみを呼び出し（SPI引数は不要）
+
+#### 問題6: WAVファイルヘッダー解析エラー
+**症状**: すべてのWAVファイルで "Invalid fmt header" エラー
+**原因**: WAVファイルにJUNK/LISTチャンクが含まれており、固定サイズ構造体読み込みが失敗
+**解決**: チャンクベースのパーサーに書き換え
+- RIFFヘッダー読み込み後、各チャンクをループで処理
+- "fmt "チャンクと"data"チャンクを探索
+- その他のチャンク（JUNK, LIST等）はスキップ
+**参考**: `xxd`コマンドで実際のWAVファイル構造を解析
+
+#### 問題7: macOSメタデータファイル
+**症状**: "._"で始まるmacOSメタデータファイルがリストに表示され、再生失敗
+**解決**: `scanWavFiles()`にドットファイルフィルタを追加
+```cpp
+if (filename.startsWith(".")) {
+    // スキップ
+}
+```
+
 ## ビルド・テスト環境
 
 - Arduino IDE: 2.x系
 - arduino-pico: 最新版
-- ボード: Raspberry Pi Pico 2
+- **実機テストボード**: Raspberry Pi Pico W (RP2040)
+- **対象ボード**: Raspberry Pi Pico 2 (RP2350), Raspberry Pi Pico W (RP2040)
 - テスト用SDカード: Class 10, 32GB, FAT32
 - テスト用WAVファイル:
   - 44.1kHz, 16bit, stereo
