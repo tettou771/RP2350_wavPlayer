@@ -42,15 +42,17 @@ public:
   /**
    * MP3ファイルを再生
    * @param filename ファイル名（絶対パス）
+   * @param stopFlag 外部から停止を指示するフラグへのポインタ（オプション）
    * @return 成功時true
    */
-  bool play(const char* filename);
+  bool play(const char* filename, volatile bool* stopFlag = nullptr);
 
   /**
    * 再生処理を更新（loop()内で呼び出す）
    * MP3デコード処理を継続する
+   * @param stopFlag 外部から停止を指示するフラグへのポインタ（オプション）
    */
-  void update();
+  void update(volatile bool* stopFlag = nullptr);
 
   /**
    * 現在の再生状態を取得
@@ -82,4 +84,7 @@ private:
   // Read buffer (512 bytes for sector-aligned reads)
   static const int BUFFER_SIZE = 512;
   uint8_t _buffer[BUFFER_SIZE];
+
+  // 外部stopフラグ（マルチコア用）
+  volatile bool* _stopFlag;
 };

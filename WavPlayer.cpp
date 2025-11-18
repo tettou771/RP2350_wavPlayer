@@ -104,10 +104,10 @@ bool WavPlayer::readWavHeader(File& file, WavHeader& header, DataChunkHeader& da
   return true;
 }
 
-void WavPlayer::play16BitStereo(File& file, uint32_t dataSize) {
+void WavPlayer::play16BitStereo(File& file, uint32_t dataSize, volatile bool* stopFlag) {
   uint32_t bytesRemaining = dataSize;
 
-  while (bytesRemaining > 0 && file.available() && _isPlaying) {
+  while (bytesRemaining > 0 && file.available() && _isPlaying && !(*stopFlag)) {
     int bytesToRead = min(bytesRemaining, (uint32_t)BUFFER_SIZE);
     int bytesRead = file.read(_buffer, bytesToRead);
 
@@ -115,6 +115,9 @@ void WavPlayer::play16BitStereo(File& file, uint32_t dataSize) {
 
     // 16bit stereo: 4バイトずつ処理
     for (int i = 0; i < bytesRead; i += 4) {
+      // stopFlagをこまめにチェック
+      if (*stopFlag) break;
+
       int16_t left = (int16_t)(_buffer[i] | (_buffer[i+1] << 8));
       int16_t right = (int16_t)(_buffer[i+2] | (_buffer[i+3] << 8));
       _i2s.write(left, right);
@@ -128,10 +131,10 @@ void WavPlayer::play16BitStereo(File& file, uint32_t dataSize) {
   }
 }
 
-void WavPlayer::play16BitMono(File& file, uint32_t dataSize) {
+void WavPlayer::play16BitMono(File& file, uint32_t dataSize, volatile bool* stopFlag) {
   uint32_t bytesRemaining = dataSize;
 
-  while (bytesRemaining > 0 && file.available() && _isPlaying) {
+  while (bytesRemaining > 0 && file.available() && _isPlaying && !(*stopFlag)) {
     int bytesToRead = min(bytesRemaining, (uint32_t)BUFFER_SIZE);
     int bytesRead = file.read(_buffer, bytesToRead);
 
@@ -139,6 +142,8 @@ void WavPlayer::play16BitMono(File& file, uint32_t dataSize) {
 
     // 16bit mono: 2バイトずつ処理、両チャンネルに同じ音を出力
     for (int i = 0; i < bytesRead; i += 2) {
+      if (*stopFlag) break;
+
       int16_t sample = (int16_t)(_buffer[i] | (_buffer[i+1] << 8));
       _i2s.write(sample, sample);
     }
@@ -150,10 +155,10 @@ void WavPlayer::play16BitMono(File& file, uint32_t dataSize) {
   }
 }
 
-void WavPlayer::play8BitStereo(File& file, uint32_t dataSize) {
+void WavPlayer::play8BitStereo(File& file, uint32_t dataSize, volatile bool* stopFlag) {
   uint32_t bytesRemaining = dataSize;
 
-  while (bytesRemaining > 0 && file.available() && _isPlaying) {
+  while (bytesRemaining > 0 && file.available() && _isPlaying && !(*stopFlag)) {
     int bytesToRead = min(bytesRemaining, (uint32_t)BUFFER_SIZE);
     int bytesRead = file.read(_buffer, bytesToRead);
 
@@ -161,6 +166,8 @@ void WavPlayer::play8BitStereo(File& file, uint32_t dataSize) {
 
     // 8bit stereo: 2バイトずつ処理、unsigned→signed変換
     for (int i = 0; i < bytesRead; i += 2) {
+      if (*stopFlag) break;
+
       int16_t left = ((int16_t)_buffer[i] - 128) << 8;
       int16_t right = ((int16_t)_buffer[i+1] - 128) << 8;
       _i2s.write(left, right);
@@ -173,10 +180,10 @@ void WavPlayer::play8BitStereo(File& file, uint32_t dataSize) {
   }
 }
 
-void WavPlayer::play8BitMono(File& file, uint32_t dataSize) {
+void WavPlayer::play8BitMono(File& file, uint32_t dataSize, volatile bool* stopFlag) {
   uint32_t bytesRemaining = dataSize;
 
-  while (bytesRemaining > 0 && file.available() && _isPlaying) {
+  while (bytesRemaining > 0 && file.available() && _isPlaying && !(*stopFlag)) {
     int bytesToRead = min(bytesRemaining, (uint32_t)BUFFER_SIZE);
     int bytesRead = file.read(_buffer, bytesToRead);
 
@@ -184,6 +191,8 @@ void WavPlayer::play8BitMono(File& file, uint32_t dataSize) {
 
     // 8bit mono: 1バイトずつ処理、unsigned→signed変換、両チャンネルに出力
     for (int i = 0; i < bytesRead; i++) {
+      if (*stopFlag) break;
+
       int16_t sample = ((int16_t)_buffer[i] - 128) << 8;
       _i2s.write(sample, sample);
     }
@@ -195,7 +204,7 @@ void WavPlayer::play8BitMono(File& file, uint32_t dataSize) {
   }
 }
 
-bool WavPlayer::play(const char* filename) {
+bool WavPlayer::play(const char* filename, volatile bool* stopFlag) {
   _currentFile = SD.open(filename);
 
   if (!_currentFile) {
@@ -204,6 +213,9 @@ bool WavPlayer::play(const char* filename) {
     _serialManager.send("error", msg);
     return false;
   }
+
+  // stopFlagがnullptrの場合は内部の_isPlayingを使用
+  volatile bool* effectiveStopFlag = stopFlag ? stopFlag : (volatile bool*)&_isPlaying;
 
   WavHeader header;
   DataChunkHeader dataChunk;
@@ -236,18 +248,18 @@ bool WavPlayer::play(const char* filename) {
 
   _isPlaying = true;
 
-  // フォーマットに応じた再生
+  // フォーマットに応じた再生（stopFlagを渡す）
   if (header.bitsPerSample == 16 && header.numChannels == 2) {
-    play16BitStereo(_currentFile, dataChunk.dataSize);
+    play16BitStereo(_currentFile, dataChunk.dataSize, effectiveStopFlag);
   }
   else if (header.bitsPerSample == 16 && header.numChannels == 1) {
-    play16BitMono(_currentFile, dataChunk.dataSize);
+    play16BitMono(_currentFile, dataChunk.dataSize, effectiveStopFlag);
   }
   else if (header.bitsPerSample == 8 && header.numChannels == 2) {
-    play8BitStereo(_currentFile, dataChunk.dataSize);
+    play8BitStereo(_currentFile, dataChunk.dataSize, effectiveStopFlag);
   }
   else if (header.bitsPerSample == 8 && header.numChannels == 1) {
-    play8BitMono(_currentFile, dataChunk.dataSize);
+    play8BitMono(_currentFile, dataChunk.dataSize, effectiveStopFlag);
   }
   else {
     char msg[128];

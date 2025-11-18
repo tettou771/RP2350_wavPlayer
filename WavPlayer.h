@@ -60,9 +60,10 @@ public:
   /**
    * WAVファイルを再生
    * @param filename ファイル名（絶対パス）
+   * @param stopFlag 外部から停止を指示するフラグへのポインタ（オプション）
    * @return 成功時true
    */
-  bool play(const char* filename);
+  bool play(const char* filename, volatile bool* stopFlag = nullptr);
 
   /**
    * 現在の再生状態を取得
@@ -88,22 +89,22 @@ private:
   /**
    * 16bit stereo データを再生
    */
-  void play16BitStereo(File& file, uint32_t dataSize);
+  void play16BitStereo(File& file, uint32_t dataSize, volatile bool* stopFlag);
 
   /**
    * 16bit mono データを再生
    */
-  void play16BitMono(File& file, uint32_t dataSize);
+  void play16BitMono(File& file, uint32_t dataSize, volatile bool* stopFlag);
 
   /**
    * 8bit stereo データを再生
    */
-  void play8BitStereo(File& file, uint32_t dataSize);
+  void play8BitStereo(File& file, uint32_t dataSize, volatile bool* stopFlag);
 
   /**
    * 8bit mono データを再生
    */
-  void play8BitMono(File& file, uint32_t dataSize);
+  void play8BitMono(File& file, uint32_t dataSize, volatile bool* stopFlag);
 
   ofxSerialManager& _serialManager;
 

@@ -14,7 +14,8 @@ Mp3Player::Mp3Player(ofxSerialManager& serialMgr)
     _i2sDinPin(-1),
     _isPlaying(false),
     _i2s(nullptr),
-    _bmp(nullptr) {
+    _bmp(nullptr),
+    _stopFlag(nullptr) {
 }
 
 Mp3Player::~Mp3Player() {
@@ -39,9 +40,12 @@ bool Mp3Player::begin(int i2sBclkPin, int i2sLrcPin, int i2sDinPin) {
   return true;
 }
 
-bool Mp3Player::play(const char* filename) {
+bool Mp3Player::play(const char* filename, volatile bool* stopFlag) {
   // 既存の再生を停止
   stop();
+
+  // stopFlagを保存（update()で使用）
+  _stopFlag = stopFlag;
 
   // I2SとBackgroundAudioを再作成（stop()で削除された場合）
   if (!_i2s) {
@@ -77,7 +81,19 @@ bool Mp3Player::play(const char* filename) {
   return true;
 }
 
-void Mp3Player::update() {
+void Mp3Player::update(volatile bool* stopFlag) {
+  // stopFlagが指定されている場合はそれを使用、なければ保存されたものを使用
+  volatile bool* effectiveStopFlag = stopFlag ? stopFlag : _stopFlag;
+
+  // 停止フラグをチェック
+  if (effectiveStopFlag && *effectiveStopFlag) {
+    if (_isPlaying) {
+      stop();
+      _serialManager.send("info", "MP3 playback stopped");
+    }
+    return;
+  }
+
   if (!_isPlaying || !_currentFile || !_bmp) {
     return;
   }
@@ -85,10 +101,31 @@ void Mp3Player::update() {
   // BackgroundAudioMP3のバッファに空きがあれば、データを読み込んで送信
   // 512バイトずつ読み込み（SDカードのセクタサイズに合わせる）
   while (_currentFile.available() && _bmp->availableForWrite() > BUFFER_SIZE) {
+    // ループ内でも停止フラグをチェック
+    if (effectiveStopFlag && *effectiveStopFlag) {
+      stop();
+      _serialManager.send("info", "MP3 playback stopped");
+      return;
+    }
+
     int bytesRead = _currentFile.read(_buffer, BUFFER_SIZE);
+
+    // 読み取り後も停止フラグをチェック（read()が時間がかかる場合に備えて）
+    if (effectiveStopFlag && *effectiveStopFlag) {
+      stop();
+      _serialManager.send("info", "MP3 playback stopped");
+      return;
+    }
 
     if (bytesRead > 0) {
       _bmp->write(_buffer, bytesRead);
+
+      // write()後も停止フラグをチェック（応答性向上）
+      if (effectiveStopFlag && *effectiveStopFlag) {
+        stop();
+        _serialManager.send("info", "MP3 playback stopped");
+        return;
+      }
     }
 
     // 短い読み取り = EOF

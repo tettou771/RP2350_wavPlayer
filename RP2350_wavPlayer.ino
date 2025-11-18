@@ -62,6 +62,13 @@ String audioFiles[100];
 int audioFileCount = 0;
 int currentFileIndex = 0;
 
+// ===== マルチコア用共有変数 =====
+// Core0（メイン）がコマンドを受け付け、Core1（サブ）が再生処理を行う
+volatile bool core1_shouldStop = false;      // Core0がtrueにセット → Core1が停止
+volatile bool core1_isPlaying = false;       // Core1が再生中かどうか
+String core1_nextFile = "";                  // 次に再生するファイル名
+volatile bool core1_hasRequest = false;      // 新しい再生リクエストがあるか
+
 /**
  * SDカード内のオーディオファイルをスキャン（WAV + MP3）
  */
@@ -141,41 +148,6 @@ void printAudioFileList() {
 }
 
 /**
- * 次のファイルを再生
- */
-void playNext() {
-  if (audioFileCount == 0) {
-    serialManager.send("warn", "No audio files found");
-    return;
-  }
-
-  if (currentFileIndex >= audioFileCount) {
-    currentFileIndex = 0;  // 最初に戻る
-  }
-
-  String filename = audioFiles[currentFileIndex];
-
-  // ファイル形式を判別して適切なプレイヤーで再生
-  if (filename.endsWith(".mp3") || filename.endsWith(".MP3")) {
-    // MP3ファイルの場合
-    // WAVプレイヤーが再生中なら停止
-    if (wavPlayer && wavPlayer->isPlaying()) {
-      wavPlayer->stop();
-    }
-    mp3Player->play(filename.c_str());
-  } else if (filename.endsWith(".wav") || filename.endsWith(".WAV")) {
-    // WAVファイルの場合
-    // MP3プレイヤーが再生中なら停止
-    if (mp3Player && mp3Player->isPlaying()) {
-      mp3Player->stop();
-    }
-    wavPlayer->play(filename.c_str());
-  }
-
-  currentFileIndex++;
-}
-
-/**
  * リストコマンドハンドラ
  */
 void handleList(const char* payload, int length) {
@@ -183,80 +155,87 @@ void handleList(const char* payload, int length) {
 }
 
 /**
- * 再生コマンドハンドラ
+ * 再生コマンドハンドラ（マルチコア対応）
  */
 void handlePlay(const char* payload, int length) {
+  // 既存の再生を停止
+  if (core1_isPlaying) {
+    core1_shouldStop = true;
+    // Core1が停止するまで待つ
+    unsigned long startTime = millis();
+    while (core1_isPlaying && (millis() - startTime < 1000)) {
+      yield();
+    }
+  }
+
   if (length > 0) {
     // ファイル名指定
     char filename[128];
     memcpy(filename, payload, length);
     filename[length] = '\0';
-
-    String filenameStr = String(filename);
-
-    // ファイル形式を判別して適切なプレイヤーで再生
-    if (filenameStr.endsWith(".mp3") || filenameStr.endsWith(".MP3")) {
-      // MP3ファイルの場合
-      if (wavPlayer && wavPlayer->isPlaying()) {
-        wavPlayer->stop();
-      }
-      mp3Player->play(filename);
-    } else if (filenameStr.endsWith(".wav") || filenameStr.endsWith(".WAV")) {
-      // WAVファイルの場合
-      if (mp3Player && mp3Player->isPlaying()) {
-        mp3Player->stop();
-      }
-      wavPlayer->play(filename);
-    }
+    core1_nextFile = String(filename);
   } else {
     // 次のファイルを再生
-    playNext();
+    if (audioFileCount == 0) {
+      serialManager.send("warn", "No audio files found");
+      return;
+    }
+    if (currentFileIndex >= audioFileCount) {
+      currentFileIndex = 0;
+    }
+    core1_nextFile = audioFiles[currentFileIndex];
+    currentFileIndex++;
   }
+
+  // Core1に再生リクエスト
+  core1_hasRequest = true;
 }
 
 /**
- * 全ファイル順次再生コマンドハンドラ
+ * 全ファイル順次再生コマンドハンドラ（マルチコア対応）
  */
 void handlePlayAll(const char* payload, int length) {
   currentFileIndex = 0;
 
-  while (currentFileIndex < audioFileCount) {
-    String filename = audioFiles[currentFileIndex];
-    bool isMp3 = filename.endsWith(".mp3") || filename.endsWith(".MP3");
+  while (currentFileIndex < audioFileCount && !core1_shouldStop) {
+    // 次のファイルをCore1に送信
+    core1_nextFile = audioFiles[currentFileIndex];
+    core1_hasRequest = true;
 
-    playNext();
+    // Core1が再生を開始するまで待つ
+    delay(100);
 
-    // MP3の場合は再生完了を待つ（非同期再生のため）
-    if (isMp3) {
-      // 再生が開始されるまで少し待つ
-      delay(100);
-
-      // 再生が終わるまで待つ
-      while (mp3Player && mp3Player->isPlaying()) {
-        mp3Player->update();
-        serialManager.update();
-        yield();
-      }
+    // 再生が終わるまで待つ（停止フラグもチェック）
+    while (core1_isPlaying && !core1_shouldStop) {
+      serialManager.update();
+      yield();
     }
+
+    // 停止フラグがセットされていたらループを抜ける
+    if (core1_shouldStop) {
+      break;
+    }
+
+    currentFileIndex++;
 
     // ファイル間に少し間隔を開ける
     delay(500);
   }
 
-  serialManager.send("info", "All files played");
+  if (core1_shouldStop) {
+    serialManager.send("info", "Playback stopped by user");
+  } else {
+    serialManager.send("info", "All files played");
+  }
 }
 
 /**
- * 停止コマンドハンドラ
+ * 停止コマンドハンドラ（マルチコア対応）
  */
 void handleStop(const char* payload, int length) {
-  if (wavPlayer) {
-    wavPlayer->stop();
-  }
-  if (mp3Player) {
-    mp3Player->stop();
-  }
-  serialManager.send("info", "Playback stopped");
+  // Core1に停止を指示
+  core1_shouldStop = true;
+  serialManager.send("info", "Stop command sent");
 }
 
 /**
@@ -281,6 +260,60 @@ void handleHelp(const char* payload, int length) {
   serialManager.send("info", "scan - Rescan SD card");
   serialManager.send("info", "help - Show this help");
 }
+
+// ===== Core1 関数（サブコア：再生処理専用）=====
+
+/**
+ * Core1のセットアップ（必要なし、setup()で初期化済み）
+ */
+void setup1() {
+  // 何もしない（プレイヤーはCore0のsetup()で初期化される）
+}
+
+/**
+ * Core1のループ（再生処理専用）
+ */
+void loop1() {
+  // 新しい再生リクエストがあるかチェック
+  if (core1_hasRequest) {
+    core1_hasRequest = false;  // リクエストをクリア
+    core1_shouldStop = false;  // 停止フラグをクリア
+    core1_isPlaying = true;    // 再生中フラグをセット
+
+    String filename = core1_nextFile;
+
+    // ファイル形式を判別して適切なプレイヤーで再生
+    if (filename.endsWith(".mp3") || filename.endsWith(".MP3")) {
+      // MP3ファイルの場合（非ブロッキング再生）
+      mp3Player->play(filename.c_str(), &core1_shouldStop);
+
+      // MP3デコードループ（stopFlagをチェックしながら）
+      while (mp3Player->isPlaying() && !core1_shouldStop) {
+        mp3Player->update(&core1_shouldStop);
+        yield();
+      }
+
+      // 再生終了処理
+      if (mp3Player->isPlaying()) {
+        mp3Player->stop();
+      }
+
+    } else if (filename.endsWith(".wav") || filename.endsWith(".WAV")) {
+      // WAVファイルの場合（ブロッキング再生）
+      wavPlayer->play(filename.c_str(), &core1_shouldStop);
+      // play()がブロッキングで完了するまで待つ
+    }
+
+    // 再生完了
+    core1_isPlaying = false;
+    core1_shouldStop = false;
+  }
+
+  // アイドル時は譲る
+  yield();
+}
+
+// ===== Core0 関数（メインコア：シリアル通信・コマンド処理）=====
 
 void setup() {
   // CPU を200MHzにオーバークロック（MP3再生のため）
@@ -371,13 +404,8 @@ void setup() {
 }
 
 void loop() {
-  // シリアル通信処理
+  // Core0: シリアル通信処理のみ
   serialManager.update();
-
-  // MP3デコード処理を継続
-  if (mp3Player) {
-    mp3Player->update();
-  }
 
   // リアルタイム処理のため、delayではなくyieldを使用
   yield();
